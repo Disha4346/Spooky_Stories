@@ -27,10 +27,16 @@ This is not meant to be rushed.
 * 👁 Read slowly
 * 🌊 Let the story sink in
 
-Visualize every sound.
-Feel every pause.
-Imagine you are sinking deeper…
-and deeper…
+And don’t just read it…
+
+See yourself in the character’s place.
+Feel what they feel.
+Hear what they hear.
+Breathe when they breathe.
+
+You are not outside the story.
+
+You are inside it.
 
 ## 🌌 About The Project
 
