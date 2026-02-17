@@ -60,20 +60,3 @@ Don’t refresh.
 
 Just keep reading.
 
-# 🚀 How To Add This
-
-In your project folder:
-
-```bash
-touch README.md
-```
-
-Paste the content above.
-
-Then:
-
-```bash
-git add README.md
-git commit -m "Add cinematic README"
-git push origin main
-```
