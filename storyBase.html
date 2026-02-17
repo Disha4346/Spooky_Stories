@@ -1,0 +1,293 @@
+<!-- FILE: storyBase.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Choose Your Story</title>
+  <link rel="stylesheet" href="CSS/story.css" />
+</head>
+<body>
+
+<!-- SCREEN 1 — Intro overlay -->
+<div id="overlay" class="overlay" role="dialog" aria-modal="true">
+  <div class="intro-card">
+    <h1>Enter names to begin</h1>
+    <p class="hint">Your name will appear in the story. Friend's name is optional (strong intensity).</p>
+    <input id="nameInput"   type="text" placeholder="Your name (e.g. Disha)"  autocomplete="off" />
+    <input id="friendInput" type="text" placeholder="Friend's name (optional)" autocomplete="off" />
+    <div class="controls">
+      <button id="startBtn"     class="btn"      type="button">Next →</button>
+      <button id="ambientBtn"   class="btn ghost" type="button">Play ambience</button>
+      <button id="nameSoundBtn" class="btn ghost" type="button">Play name-sound</button>
+    </div>
+    <p class="small">Tip: Stay in a dark room and use headphones for full effect.</p>
+  </div>
+</div>
+
+<!-- SCREEN 2 — Story selection -->
+<div id="storySelect" class="overlay story-select-screen" role="dialog" aria-modal="true" style="display:none;">
+  <div class="story-select-card">
+    <p class="select-eyebrow">Choose your darkness</p>
+    <h2 class="select-heading">Which fear calls to you?</h2>
+    <div class="select-rule"></div>
+    <div class="story-grid">
+      <button class="story-card" data-story="mirror" type="button" aria-pressed="false">
+        <span class="story-card__check"></span>
+        <span class="story-card__icon">🪞</span>
+        <span class="story-card__title">The Man in the Mirror</span>
+        <span class="story-card__tag">Psychological · 2 characters</span>
+        <p class="story-card__desc">Something has always been in the mirror behind you. For the past week, it has been getting closer. Tonight, it speaks.</p>
+      </button>
+      <button class="story-card" data-story="thirteen" type="button" aria-pressed="false">
+        <span class="story-card__check"></span>
+        <span class="story-card__icon">🕯️</span>
+        <span class="story-card__title">Thirteen</span>
+        <span class="story-card__tag">Possession · 13 nights</span>
+        <p class="story-card__desc">On the first night you dreamed of a corridor that did not end. A voice whispered <em>"thirteen days."</em> That was eight days ago.</p>
+      </button>
+    </div>
+    <p id="friendNote" class="select-friend-note" style="display:none;">
+      ✦ <em>The Man in the Mirror</em> uses your friend's name for extra dread.
+    </p>
+    <button id="beginBtn" class="btn begin-btn" type="button" disabled>Begin Experience</button>
+    <p class="select-hint">There is no turning back once you begin.</p>
+  </div>
+</div>
+
+<!-- SCREEN 3 — Main stage -->
+<main id="stage" class="stage" role="main">
+  <div class="bg-layer"></div>
+  <header class="topbar">
+    <h2 class="title" id="storyTitleEl">THE MAN IN THE MIRROR</h2>
+    <div class="blood-title">👁️</div>
+  </header>
+  <section id="story" class="story" tabindex="0"></section>
+  <div id="effects">
+    <div class="blood-drip" id="drip1"></div>
+    <div class="blood-drip" id="drip2"></div>
+    <div class="glitch" id="glitch"></div>
+  </div>
+  <div id="controls" class="bottom-controls">
+    <button id="nextBtn" class="btn">Next</button>
+    <button id="skipBtn" class="btn ghost">Skip / End</button>
+  </div>
+</main>
+
+<audio id="ambientAudio" src="Sounds/spooky-keys-63764.mp3" loop preload="auto"></audio>
+
+<script>
+(function () {
+  'use strict';
+  var _audioCtx = null, _mainNodes = [], _sampleSource = null, _ambientPlaying = false;
+  
+  function ensureAudio() {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  
+  function resumeAudio() {
+    ensureAudio();
+    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  }
+  
+  function charValue(ch) {
+    if (!ch) return 0.5;
+    var c = ch.toLowerCase();
+    return !/[a-z]/.test(c) ? 0.5 : Math.max(0, Math.min(1, (c.charCodeAt(0) - 97) / 25));
+  }
+  
+  function makeReverb(dur, dec) {
+    dur = dur || 2.2; dec = dec || 2.0;
+    var sr = _audioCtx.sampleRate, len = Math.floor(sr * dur), buf = _audioCtx.createBuffer(2, len, sr);
+    for (var ch = 0; ch < 2; ch++) {
+      var d = buf.getChannelData(ch);
+      for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, dec);
+    }
+    return buf;
+  }
+  
+  function stopAllAudio() {
+    try {
+      if (!_audioCtx) return;
+      _mainNodes.forEach(function (n) {
+        try { if (typeof n.stop === 'function') n.stop(0); } catch(e) {}
+        try { if (typeof n.disconnect === 'function') n.disconnect(); } catch(e) {}
+      });
+      _mainNodes = [];
+      if (_sampleSource) {
+        try { _sampleSource.stop(0); _sampleSource.disconnect(); } catch(e) {}
+        _sampleSource = null;
+      }
+    } catch(e) { console.warn('stopAllAudio', e); }
+  }
+  
+  function playNameSound(name) {
+    try {
+      resumeAudio();
+      if (!name || !name.trim()) name = 'You';
+      stopAllAudio();
+      var now = _audioCtx.currentTime, master = _audioCtx.createGain();
+      master.gain.value = 0.6; master.connect(_audioCtx.destination); _mainNodes.push(master);
+      
+      var sub = _audioCtx.createOscillator(); sub.type = 'sine'; sub.frequency.value = 40;
+      var subG = _audioCtx.createGain(); subG.gain.value = 0.05;
+      sub.connect(subG); subG.connect(master); sub.start(now); _mainNodes.push(sub, subG);
+      
+      var letters = name.split('').filter(Boolean), voices = Math.max(2, Math.min(6, Math.floor(letters.length / 2) + 2));
+      for (var v = 0; v < voices; v++) {
+        var ch = letters[v % letters.length], val = charValue(ch), freq = 110 * (1 + val * 6) * (1 + (Math.random() - 0.5) * 0.02);
+        var osc = _audioCtx.createOscillator(); osc.type = Math.random() < 0.5 ? 'sawtooth' : 'triangle';
+        osc.frequency.value = freq * (1 + (v - voices / 2) * 0.03);
+        var g = _audioCtx.createGain(); g.gain.value = 0;
+        var filt = _audioCtx.createBiquadFilter(); filt.type = 'lowpass'; filt.Q.value = 6; filt.frequency.value = 500 + val * 3500;
+        var lfo = _audioCtx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.08 + val * 0.8;
+        var lfoG = _audioCtx.createGain(); lfoG.gain.value = 0.4;
+        lfo.connect(lfoG); lfoG.connect(g.gain); osc.connect(filt); filt.connect(g); g.connect(master);
+        g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.12 + Math.random() * 0.06, now + 0.4 + val * 0.9);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 7 + Math.random() * 6);
+        osc.start(now); lfo.start(now); _mainNodes.push(osc, g, filt, lfo, lfoG);
+      }
+      
+      var nsz = 2 * _audioCtx.sampleRate, nbuf = _audioCtx.createBuffer(1, nsz, _audioCtx.sampleRate), nd = nbuf.getChannelData(0);
+      for (var ni = 0; ni < nsz; ni++) nd[ni] = (Math.random() * 2 - 1) * Math.pow(1 - ni / nsz, 1.0);
+      var ns = _audioCtx.createBufferSource(); ns.buffer = nbuf; ns.loop = true;
+      var nf = _audioCtx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 800 + letters.length * 40; nf.Q.value = 1.2;
+      var ng = _audioCtx.createGain(); ng.gain.value = 0;
+      var gl = _audioCtx.createOscillator(); gl.type = 'sine'; gl.frequency.value = 0.5 + letters.length * 0.05;
+      var gg = _audioCtx.createGain(); gg.gain.value = 0.5;
+      gl.connect(gg); gg.connect(ng.gain); ns.connect(nf); nf.connect(ng); ng.connect(master);
+      ng.gain.setValueAtTime(0, now); ng.gain.linearRampToValueAtTime(0.12 + Math.random() * 0.02, now + 0.6);
+      ng.gain.exponentialRampToValueAtTime(0.0001, now + 10 + Math.random() * 5);
+      ns.start(now); gl.start(now); _mainNodes.push(ns, nf, ng, gl, gg);
+      
+      var conv = _audioCtx.createConvolver(); conv.buffer = makeReverb(2.4, 2.6);
+      var rvG = _audioCtx.createGain(); rvG.gain.value = 0.28;
+      master.connect(conv); conv.connect(rvG); rvG.connect(_audioCtx.destination); _mainNodes.push(conv, rvG);
+      setTimeout(stopAllAudio, (8 + Math.random() * 6) * 1000);
+    } catch(e) { console.warn('playNameSound error', e); }
+  }
+  
+  function playDaySound() {
+    try {
+      resumeAudio(); stopAllAudio();
+      var now = _audioCtx.currentTime, master = _audioCtx.createGain(); master.gain.value = 0.55;
+      master.connect(_audioCtx.destination); _mainNodes.push(master);
+      var sub = _audioCtx.createOscillator(); sub.type = 'sine';
+      sub.frequency.setValueAtTime(28, now); sub.frequency.exponentialRampToValueAtTime(18, now + 4.5);
+      var sG = _audioCtx.createGain();
+      sG.gain.setValueAtTime(0, now); sG.gain.linearRampToValueAtTime(0.18, now + 0.3); sG.gain.exponentialRampToValueAtTime(0.0001, now + 5.5);
+      sub.connect(sG); sG.connect(master); sub.start(now); _mainNodes.push(sub, sG);
+      [[110, 0.35, 6], [275, 0.18, 3.5], [620, 0.09, 1.8]].forEach(function (p) {
+        var b = _audioCtx.createOscillator(); b.type = 'sine'; b.frequency.value = p[0];
+        var bG = _audioCtx.createGain();
+        bG.gain.setValueAtTime(0.0001, now); bG.gain.linearRampToValueAtTime(p[1], now + 0.02); bG.gain.exponentialRampToValueAtTime(0.0001, now + p[2]);
+        b.connect(bG); bG.connect(master); b.start(now); _mainNodes.push(b, bG);
+      });
+      var dr = _audioCtx.createOscillator(); dr.type = 'sawtooth'; dr.frequency.value = 36;
+      var df = _audioCtx.createBiquadFilter(); df.type = 'lowpass'; df.frequency.value = 120; df.Q.value = 2;
+      var dG = _audioCtx.createGain();
+      dG.gain.setValueAtTime(0, now + 0.6); dG.gain.linearRampToValueAtTime(0.12, now + 1.8); dG.gain.exponentialRampToValueAtTime(0.0001, now + 7);
+      dr.connect(df); df.connect(dG); dG.connect(master); dr.start(now + 0.6); _mainNodes.push(dr, df, dG);
+      var cv = _audioCtx.createConvolver(); cv.buffer = makeReverb(3.5, 2.2);
+      var rG = _audioCtx.createGain(); rG.gain.value = 0.45;
+      master.connect(cv); cv.connect(rG); rG.connect(_audioCtx.destination); _mainNodes.push(cv, rG);
+      setTimeout(stopAllAudio, 9000);
+    } catch(e) { console.warn('playDaySound error', e); }
+  }
+  
+  function playSoftAmbient() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)(), o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = 40 + Math.random() * 10; g.gain.value = 0.02;
+      o.connect(g); g.connect(ctx.destination); o.start();
+      var mv = setInterval(function () { o.frequency.value = 30 + Math.random() * 30; }, 3000);
+      setTimeout(function () { clearInterval(mv); try { o.stop(); ctx.close(); } catch(e) {} }, 600000);
+    } catch(e) { console.warn('playSoftAmbient error', e); }
+  }
+  
+  window.__audio = { resumeAudio: resumeAudio, stopAllAudio: stopAllAudio, playNameSound: playNameSound, playDaySound: playDaySound };
+  
+  document.getElementById('ambientBtn').addEventListener('click', function () {
+    resumeAudio();
+    var ambientAudio = document.getElementById('ambientAudio');
+    if (_ambientPlaying) {
+      ambientAudio.pause(); this.textContent = 'Play ambience'; _ambientPlaying = false;
+    } else {
+      var p = ambientAudio.play();
+      if (p && typeof p.then === 'function') {
+        p.then(function () { this.textContent = 'Ambience playing'; _ambientPlaying = true; }.bind(this))
+         .catch(function () { playSoftAmbient(); this.textContent = 'Ambience playing'; this.disabled = true; _ambientPlaying = true; }.bind(this));
+      } else { this.textContent = 'Ambience playing'; _ambientPlaying = true; }
+    }
+  });
+  
+  document.getElementById('nameSoundBtn').addEventListener('click', function () {
+    resumeAudio();
+    playNameSound(document.getElementById('nameInput').value.trim() || 'You');
+  });
+})();
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var overlay = document.getElementById('overlay'), storySelect = document.getElementById('storySelect');
+  var startBtn = document.getElementById('startBtn'), beginBtn = document.getElementById('beginBtn');
+  var friendInput = document.getElementById('friendInput'), friendNote = document.getElementById('friendNote');
+  var storyTitleEl = document.getElementById('storyTitleEl'), nameInput = document.getElementById('nameInput');
+  var storyCards = document.querySelectorAll('.story-card');
+  var TITLES = { mirror: 'THE MAN IN THE MIRROR', thirteen: 'THIRTEEN' };
+  window.__selectedStory = null; window.__overlayDismissed = false; var engineLoaded = false;
+  
+  function goToPicker() {
+    if (window.__audio) window.__audio.resumeAudio();
+    var name = nameInput.value.trim();
+    if (!name) {
+      nameInput.focus(); nameInput.classList.add('input-error');
+      setTimeout(function () { nameInput.classList.remove('input-error'); }, 1200);
+      return;
+    }
+    overlay.classList.add('screen-exit');
+    setTimeout(function () {
+      overlay.style.display = 'none'; overlay.classList.remove('screen-exit');
+      storySelect.style.display = 'flex'; storySelect.classList.add('screen-enter');
+      setTimeout(function () { storySelect.classList.remove('screen-enter'); }, 500);
+    }, 360);
+  }
+  
+  startBtn.addEventListener('click', goToPicker);
+  nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') goToPicker(); });
+  friendInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') goToPicker(); });
+  
+  storyCards.forEach(function (card) {
+    card.addEventListener('click', function () {
+      storyCards.forEach(function (c) { c.classList.remove('story-card--selected'); c.setAttribute('aria-pressed', 'false'); });
+      card.classList.add('story-card--selected'); card.setAttribute('aria-pressed', 'true');
+      window.__selectedStory = card.dataset.story; beginBtn.disabled = false; beginBtn.classList.add('begin-btn--active');
+      friendNote.style.display = (window.__selectedStory === 'mirror' && friendInput.value.trim()) ? 'block' : 'none';
+    });
+    card.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.click(); } });
+  });
+  
+  beginBtn.addEventListener('click', function () {
+    if (!window.__selectedStory || beginBtn.disabled || engineLoaded) return;
+    engineLoaded = true;
+    if (window.__audio) window.__audio.resumeAudio();
+    storyTitleEl.textContent = TITLES[window.__selectedStory] || TITLES.mirror;
+    if (window.__selectedStory === 'thirteen') friendInput.value = '';
+    storySelect.classList.add('screen-exit');
+    setTimeout(function () {
+      if (storySelect.parentNode) storySelect.parentNode.removeChild(storySelect);
+      overlay.style.display = 'none'; overlay.style.opacity = '0'; overlay.setAttribute('aria-hidden', 'true');
+      window.__overlayDismissed = true;
+      var src = (window.__selectedStory === 'thirteen') ? 'Story/Thirteen.js' : 'Story/Mirror.js';
+      var s = document.createElement('script'); s.src = src;
+      s.onload = function () { requestAnimationFrame(function () { startBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); };
+      document.body.appendChild(s);
+    }, 380);
+  });
+})();
+</script>
+
+</body>
+</html>
